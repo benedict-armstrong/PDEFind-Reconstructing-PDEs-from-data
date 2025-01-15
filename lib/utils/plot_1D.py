@@ -13,7 +13,7 @@ def plot_3d(
     """
     Plot the solution in 3D
     """
-    fig, axs = plt.subplots(1, 3, figsize=(12, 9), subplot_kw={"projection": "3d"})
+    fig, axs = plt.subplots(1, 3, figsize=(20, 5), subplot_kw={"projection": "3d"})
 
     x = ref_sol[..., 0]
     y = ref_sol[..., 1]
