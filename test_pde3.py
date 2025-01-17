@@ -2,11 +2,11 @@
 import numpy as np
 from scipy.integrate import solve_ivp
 import matplotlib.pyplot as plt
-from lib.pde_find import PDEFind
+from lib.pde_find2 import PDEFind
 from matplotlib.animation import FuncAnimation
 
 # %%
-raw_data = np.load("src/PDE-Find: Reconstructing PDEs from data/data/3.npz")
+raw_data = np.load("data/3.npz")
 
 u_o = raw_data["u"]
 v_o = raw_data["v"]
@@ -30,13 +30,12 @@ data = data[::4, ::4, ::1]
 
 vars = (["x", "y", "t"], ["u", "v"])
 
-pdefind = PDEFind(data, vars, lib_size=3, order=2)
+pdefind = PDEFind(vars, polynomial_degree=3, order=2)
 
 # %%
 # Create grid for x and y
-x = pdefind.ind_var_grids[0]
-y = pdefind.ind_var_grids[1]
-t = pdefind.ind_var_grids[2]
+x, y, t = pdefind.add_grid(x_o, y_o, t_o)
+
 
 # Discretize the spatial derivatives (finite differences)
 dx = x[1] - x[0]
@@ -89,7 +88,7 @@ def pde_system(t, u1D):
 
     u, v = dataND[..., 0], dataND[..., 1]
 
-    padding = 3
+    padding = 1
 
     # If the grid is periodic, pad the grid and data
     u = np.pad(u, padding, mode="wrap")
@@ -117,17 +116,21 @@ def pde_system(t, u1D):
 
     u, v, u_x, u_y, u_xx, u_yy, u_xy, v_x, v_y, v_xx, v_yy, v_xy = reshaped_grads
 
+    # pdefind.create_library(u)
+    # pdefind.create_library(v)
+
     # Master equation:
     # u_t = (
     #     0.40 * v
-    #     + 0.8 * u
-    #     + 0.5 * v**3
-    #     - 0.8 * u * v**2
-    #     + 0.5 * u**2 * v
-    #     - 0.8 * u**3
-    #     + 0.1 * u_xx
-    #     + 0.1 * u_yy
+    #     + 0.8 * u  #
+    #     + 0.5 * v**3  #
+    #     - 0.8 * u * v**2  #
+    #     + 0.5 * u**2 * v  #
+    #     - 0.8 * u**3  #
+    #     + 0.1 * u_xx  #
+    #     + 0.1 * u_yy  #
     # )
+
     # v_t = (
     #     -0.40 * u
     #     + 0.8 * v
@@ -139,97 +142,95 @@ def pde_system(t, u1D):
     #     + 0.1 * v_yy
     # )
 
-    # Mine:
+    # Mine 1:
     # u_t = (
-    #     +0.431 * u
-    #     - 0.234 * u_x * v * v_x
-    #     - 0.357 * u * u_x * u_x
-    #     - 0.124 * u * u_y * u_y
-    #     - 0.482 * u * u * u
-    #     + 0.313 * u * u * v
-    #     - 0.381 * u * v * v
-    #     + 0.607 * v
-    #     + 0.31 * v * v * v
-    # )
-    # v_t = (
-    #     -0.572 * u
-    #     - 0.264 * u * u_y * v_y
-    #     - 0.349 * u * u * u
-    #     - 0.424 * u * u * v
-    #     - 0.35 * u * v * v
-    #     + 0.45 * v
-    #     + 0.0666 * v_xx
-    #     - 0.388 * v * v_y * v_y
-    #     - 0.471 * v * v * v
-    # )
-
-    # new
-    # u_t = (
-    #     +0.33 * u
-    #     - 0.355 * u_x * v * v_x
-    #     - 0.38 * u * u_x * u_x
-    #     + 0.0846 * u * u_yy * u_y
-    #     - 0.37 * u * u * u
-    #     + 0.105 * u * u * u_y
-    #     - 0.363 * u * v * v
-    #     + 0.0537 * u * v * v_y
-    #     + 0.891 * v
+    #     +0.267 * u
+    #     - 0.324 * u * u * u
+    #     - 0.146 * u * u * v_xy
+    #     - 0.33 * u * v * v
+    #     + 0.51 * v
+    #     + 0.137 * v_xy
+    #     - 0.154 * v * v * v_xy
     # )
 
     # v_t = (
-    #     -0.892 * u
-    #     - 0.301 * u * u_x * v_x
-    #     - 0.392 * u * u_y * v_y
-    #     - 0.512 * u * u * v
-    #     + 0.509 * v
-    #     - 0.36 * v * v_x * v_x
-    #     - 0.461 * v * v_y * v_y
-    #     - 0.566 * v * v * v
+    #     -0.508 * u
+    #     + 0.283 * u_y
+    #     - 0.322 * u_y * v * v
+    #     - 0.316 * u * u * u_y
+    #     - 0.372 * u * u * v
+    #     + 0.31 * v
+    #     - 0.379 * v * v * v
+    #     + 0.0106 * v * v * v_x
     # )
 
+    # Mine 2:
     # u_t = (
-    #     +0.33 * u
-    #     - 0.355 * u_x * v * v_x
-    #     - 0.38 * u * u_x * u_x
-    #     + 0.0846 * u * u_yy * u_y
-    #     - 0.37 * u * u * u
-    #     + 0.105 * u * u * u_y
-    #     - 0.363 * u * v * v
-    #     + 0.0537 * u * v * v_y
-    #     + 0.891 * v
+    #     +0.262 * u
+    #     + 0.0029 * u_x * v * v
+    #     - 0.317 * u * u * u
+    #     + 0.0148 * u * u * u_x
+    #     - 0.814 * u * u * v
+    #     - 0.296 * u * v * v
+    #     + 1.39 * v
+    #     - 0.844 * v * v * v
     # )
 
     # v_t = (
-    #     -0.892 * u
-    #     - 0.301 * u * u_x * v_x
-    #     - 0.392 * u * u_y * v_y
-    #     - 0.512 * u * u * v
-    #     + 0.509 * v
-    #     - 0.36 * v * v_x * v_x
-    #     - 0.461 * v * v_y * v_y
-    #     - 0.566 * v * v * v
+    #     -1.26 * u
+    #     - 0.00946 * u_xx * v * v
+    #     + 0.7 * u * u * u
+    #     - 0.365 * u * u * v
+    #     + 0.0109 * u * u * v_y
+    #     + 0.692 * u * v * v
+    #     + 0.325 * v
+    #     - 0.385 * v * v * v
+    #     - 0.0187 * v * v * v_y
     # )
 
+    # u_t = (
+    #     +0.222 * u
+    #     + 0.182 * u_xy
+    #     - 0.2 * u_xy * v * v
+    #     - 0.272 * u * u * u
+    #     - 0.209 * u * u * u_xy
+    #     - 0.518 * u * u * v
+    #     - 0.259 * u * v * v
+    #     + 1.05 * v
+    #     - 0.483 * v * v * v
+    # )
+
+    # v_t = (
+    #     -1.02 * u
+    #     + 0.449 * u * u * u
+    #     - 0.418 * u * u * v
+    #     + 0.445 * u * v * v
+    #     + 0.364 * v
+    #     - 0.437 * v * v * v
+    #     - 0.0109 * v * v * v_xy
+    # )
+
+    # Mine 4:
     u_t = (
-        +0.33 * u
-        - 0.355 * u_x * v * v_x
-        - 0.38 * u * u_x * u_x
-        + 0.0846 * u * u_yy * u_y
-        - 0.37 * u * u * u
-        + 0.105 * u * u * u_y
-        - 0.363 * u * v * v
-        + 0.0537 * u * v * v_y
-        + 0.891 * v
+        +0.762 * u
+        + 0.108 * u_xx
+        + 0.105 * u_yy
+        - 0.735 * u * u * u
+        + 0.671 * u * u * v
+        - 0.738 * u * v * v
+        + 0.287 * v
+        + 0.67 * v * v * v
     )
     v_t = (
-        -0.892 * u
-        - 0.301 * u * u_x * v_x
-        - 0.392 * u * u_y * v_y
-        - 0.512 * u * u * v
-        + 0.509 * v
-        - 0.36 * v * v_x * v_x
-        - 0.461 * v * v_y * v_y
-        - 0.566 * v * v * v
+        -0.28 * u
+        - 0.679 * u * u * u
+        - 0.727 * u * u * v
+        - 0.679 * u * v * v
+        + 0.757 * v
+        + 0.118 * v_xx
+        + 0.106 * v_yy
+        - 0.74 * v * v * v
+        - 0.0353 * v * v * v_xx
     )
 
     # Convert the 2D array back to 1D for the ODE solver
@@ -279,6 +280,12 @@ l2_err_v = np.linalg.norm(v - v_pred) / np.linalg.norm(v)
 
 print("L2 error for u: ", l2_err_u)
 print("L2 error for v: ", l2_err_v)
+
+l2_err_u = np.linalg.norm(u[..., -1] - u_pred[..., -1]) / np.linalg.norm(u[..., -1])
+l2_err_v = np.linalg.norm(v[..., -1] - v_pred[..., -1]) / np.linalg.norm(v[..., -1])
+
+print("L2 error (final_t) for u: ", l2_err_u)
+print("L2 error (final_t) for v: ", l2_err_v)
 
 u_pred_whole_t = np.gradient(u_pred, t, axis=2)
 
@@ -350,7 +357,7 @@ def update(time):
 anim = FuncAnimation(fig, update, frames=len(t), interval=100)
 
 # Save the animation as a gif
-anim.save("pde_solution_2_extra_script_theirs_test.gif")
+anim.save("gifs/mine.gif")
 
 # plt.show()
 

@@ -2,7 +2,7 @@ from typing import List, Tuple
 import numpy as np
 import itertools
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LassoCV
+from sklearn.linear_model import LassoCV, Ridge, RidgeCV
 from scipy.integrate import solve_ivp
 
 
@@ -66,7 +66,8 @@ class PDEFind:
         library: np.ndarray,
         target: np.ndarray,
         cutoff: float = 1e-2,
-        algorithm: str = "lasso",
+        algorithm: str = "tlsq",
+        alphas: List[float] = [1e-4, 1e-5, 1e-6],
     ):
         """ """
 
@@ -76,9 +77,7 @@ class PDEFind:
             library = library.reshape((n_terms, -1)).T
             target = target.flatten()
 
-            reg = LassoCV(
-                cv=5, max_iter=int(1e9), fit_intercept=False, alphas=[1e-5, 1e-6]
-            )
+            reg = LassoCV(cv=3, max_iter=int(1e9), fit_intercept=False, alphas=alphas)
 
             reg.fit(library, target)
             self.coef = reg.coef_
@@ -87,16 +86,27 @@ class PDEFind:
             library_flat = library.reshape((n_terms, -1), copy=True).T
             target_flat = target.flatten()
 
-            X = np.linalg.lstsq(library_flat, target_flat, rcond=None)[0]
+            X = np.linalg.lstsq(
+                library_flat.T.dot(library_flat) + 1e-5 * np.eye(library_flat.shape[1]),
+                library_flat.T.dot(target_flat),
+                rcond=None,
+            )[0]
+
+            print(X.shape)
 
             for _ in range(100):
                 X[np.abs(X) < cutoff] = 0
                 biginds = np.abs(X) > 0
-                new_lib = library[biginds].reshape((sum(biginds), -1), copy=True).T
+                print(biginds)
+                new_lib = library[biginds]
+                new_lib = new_lib.reshape((sum(biginds), -1), copy=True).T
 
-                X[biginds] = np.linalg.lstsq(
-                    new_lib,
-                    target_flat,
+                # model.fit(new_lib, target_flat)
+                # X[biginds] = model.coef_
+
+                X = np.linalg.lstsq(
+                    new_lib.T.dot(new_lib) + 1e-5 * np.eye(new_lib.shape[1]),
+                    new_lib.T.dot(target_flat),
                     rcond=None,
                 )[0]
 

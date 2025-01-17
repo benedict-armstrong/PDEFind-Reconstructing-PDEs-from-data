@@ -1,51 +1,41 @@
 import numpy as np
-import matplotlib.pyplot as plt
-from lib.pde_find import PDEFind
+from lib.pde_find2 import PDEFind
+from lib.utils.plot_1D import plot_2d, plot_3d
 from lib.solve_pde import SolvePDE
-from utils.plot_1D import plot_2d
 
 PDE_NUMBER = 2
 
-raw_data = np.load(f"src/PDE-Find: Reconstructing PDEs from data/data/{PDE_NUMBER}.npz")
+raw_data = np.load("data/2.npz")
 
 u = raw_data["u"]
 x = raw_data["x"]
 t = raw_data["t"]
 
-data = np.stack([x, t, u], axis=-1)
-vars = (["x", "t"], ["u"])
-pdefind = PDEFind(data, vars, lib_size=2, order=2)
+pdefind = PDEFind(var_labels=(["x", "t"], ["u"]), polynomial_degree=3, order=3)
 
-library, labels = pdefind.create_library()
+pdefind.add_grid(x, t)
+
+u_t = np.gradient(u, t[0], axis=1)
+
+library, labels = pdefind.create_library(u)
 
 print(f"Library size: {len(labels)}")
 print(f"Library terms: {labels}")
 
-u_t = np.gradient(data[..., 2], data[..., 2][0, 0], axis=-1)
-algorithm = "lasso"
-cutoff = 1e-2
-iterations = 100
-coef_u, alpha_u = pdefind.solve_regression(
-    library,
-    u_t,
-    algorithm=algorithm,
-    cutoff=cutoff,
-    iterations=iterations,
-)
+coef, alpha = pdefind.solve_regression(library, u_t, algorithm="lasso", cutoff=0.1)
 
-print(pdefind.latex_string(coef_u, "u"))
-# print(pdefind.python_string(coef_u, "u"))
+print(pdefind.latex_string(coef, labels, "u"))
 
+# solver = SolvePDE(data, 2, 1, pdefind)
 
-include_terms = pdefind.non_zero_terms(coef_u)
+# t_grid = data[..., 1][0]
+# u_0 = data[..., 0]
+# include_terms = pdefind.non_zero_terms(coef)
 
+# sol, time_steps = solver.solve_pde(
+#     u_0, t_grid=t_grid, include_terms=include_terms, coefs=[coef]
+# )
 
-u_0 = u[:, 0]
+# sol = pdefind.solve_pde(u[:, 0], t[0])
 
-solver = SolvePDE(data, 2, 1, pdefind)
-
-t_grid = pdefind.time_grid
-
-sol = solver.solve_pde(u_0, t_grid=t_grid, include_terms=include_terms, coefs=[coef_u])
-
-print(sol.shape)
+# plot_2d(sol, u, "pde_1_out.png")

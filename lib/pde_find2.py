@@ -1,12 +1,10 @@
-from typing import Dict, List, Tuple
+from typing import Dict, Iterable, List, Tuple
 import numpy as np
 import itertools
 from sklearn.linear_model import LassoCV, RidgeCV
-from scipy.integrate import solve_ivp
 import re
 from functools import lru_cache
 import tqdm
-import pickle
 
 
 class PDEFind:
@@ -16,9 +14,8 @@ class PDEFind:
 
     def __init__(
         self,
-        data: np.ndarray,
-        vars: Tuple[List[str], List[str]],
-        lib_size: int = 3,
+        var_labels: Tuple[List[str], List[str]],
+        polynomial_degree: int = 3,
         order: int = 2,
         periodic: bool = False,
     ):
@@ -26,83 +23,106 @@ class PDEFind:
         `data`: np.ndarray (..., number_of_independent_variables + number_of_dependent_variables)
         e.g.: u(x, t) on square domain => (number of x_points, number of time points, 3) and `vars` = ([x, t],[u])
 
-        `vars`: Tuple(List[str], List[str]) - Tuple of independent and dependent variables
-        `lib_size`: int - number of terms in the library
+        `vars`: List[str] List of independent variables
+        `polynomial_degree`: int - polynomial degree of the terms use in the library
         `order`: int - order of the PDE
         """
 
-        self.data = data
-        self.periodic = periodic
-        self.data_shape = data.shape
-        self.n_vars = data.shape[-1]
-        self.vars = vars
-        self.ind_vars = vars[0][:]
-        self.ind_vars_without_time = vars[0]
-        try:
-            self.ind_vars_without_time.remove("t")
-        except ValueError:
-            pass
-        self.dep_vars = vars[1]
-        self.lib_size = lib_size
+        # set configuration
+        self.polynomial_degree = polynomial_degree
         self.order = order
+        self.var_labels = var_labels
+        self.periodic = periodic
 
-        if len(self.ind_vars) + len(vars[1]) != self.n_vars:
-            raise ValueError(
-                f"Number of variables {self.n_vars} does not match provided variables {vars}"
-            )
+        self.indep_vars_labels = var_labels[0]
+        self.indep_vars_labels_without_time = var_labels[0][:]
+        self.indep_vars_labels_without_time.remove("t")
+        self.dep_vars_labels = var_labels[1]
 
+        # get the number of independent and dependent variables
+        self.num_indep_vars = len(self.indep_vars_labels)
+        self.num_dep_vars = len(self.dep_vars_labels)
+
+        self.time_index = self.indep_vars_labels.index("t")
+
+    def add_grid(self, *independent_vars: np.ndarray):
+        """ """
         self.ind_var_grids = []
-        for i in range(len(self.ind_vars)):
-            # unsplit the data on last axis
-            x = np.split(data, data.shape[-1], axis=-1)[i]
-            # remove the last axis
-            x = x[..., 0]
-            # select 0th element of all except the ith axis
-            x = x[
+        for i in range(len(independent_vars)):
+            x = independent_vars[i][
                 tuple(
-                    [0 if j != i else slice(None) for j in range(len(data.shape) - 1)]
+                    [0 if j != i else slice(None) for j in range(self.num_indep_vars)]
                 )
             ]
             self.ind_var_grids.append(x)
 
-        self.time_grid = self.ind_var_grids[self.ind_vars.index("t")]
+        self.time_grid = self.ind_var_grids[self.time_index]
+
+        return self.ind_var_grids
+
+    @lru_cache(maxsize=10)
+    def gradients_to_include(self, include_terms: Tuple[str]) -> Dict[str, List[str]]:
+        """
+        Parse the include_terms list to extract the variables and orders to include in the library
+        """
+        gradients_to_include: Dict[str, List[str]] = {}
+        for term in include_terms:
+            # terms are in the form "u_{xyx}u_{xy}u" for example
+            # use regex to extract the variables and orders
+            matches = re.findall(r"([a-z])_{([a-z]+)}", term)
+            for var, ds in matches:
+                if var not in gradients_to_include:
+                    gradients_to_include[var] = []
+                gradients_to_include[var].append(ds)
+
+        return gradients_to_include
 
     def calculate_gradients(
         self,
-        data: np.ndarray = None,
+        dependent_vars: Iterable[np.ndarray],
         gradients_to_calculate: Dict[str, List[str]] = None,
     ) -> List[Tuple[np.ndarray, str]]:
         """
         Calculate the gradients up to the order of the PDE for the dependent variables
+
+        Args:
+            `independent_vars`: List of independent variables (must be in same order as labels passed to class)
+            dependent_vars: List of dependent variables
+            gradients_to_calculate: Dict of gradients to calculate for each dependent variable e.g. {"u": ["x", "y"]}
+
+        Returns:
+            List of tuples containing the gradient and the variable string
         """
 
-        if data is None:
-            data = self.data
+        if not hasattr(self, "ind_var_grids"):
+            raise ValueError("Grids for the independent variables must be set first")
 
         gradients = []
-        for i, dep_var in enumerate(self.dep_vars):
-            if gradients_to_calculate and dep_var not in gradients_to_calculate:
+        for dep_var, dep_var_label in zip(dependent_vars, self.dep_vars_labels):
+            # skip if the gradient is not in the include_terms list
+            if gradients_to_calculate and dep_var_label not in gradients_to_calculate:
                 continue
 
+            # calculate the gradients for all combinations of independent variables of length `order`
             for order in range(1, self.order + 1):
-                # calculate the gradients for all combinations of independent variables of lenght `order`
                 for d in itertools.combinations_with_replacement(
-                    self.ind_vars_without_time, order
+                    self.indep_vars_labels_without_time, order
                 ):
                     d_string = "".join(sorted(d))
-                    var_string = f"{dep_var}_{{{d_string}}}"
-                    if gradients_to_calculate and d in gradients_to_calculate[dep_var]:
+                    gradient_label = f"{dep_var_label}_{{{d_string}}}"
+                    if (
+                        gradients_to_calculate
+                        and gradient_label in gradients_to_calculate[dep_var_label]
+                    ):
                         # Skip if the term is not in the include_terms list
                         continue
 
-                    data_to_diff = data[
-                        ..., len(self.ind_vars) + i
-                    ]  # Select the dependent variable
+                    data_to_diff = dep_var
 
-                    for diff_by_var in d:
-                        axis = self.ind_vars.index(diff_by_var)
-
+                    for diff_by_var_label in d:
+                        axis = self.indep_vars_labels.index(diff_by_var_label)
                         diff_grid = self.ind_var_grids[axis]
+
                         if self.periodic:
                             padding = 3
 
@@ -129,86 +149,64 @@ class PDEFind:
                                 data_to_diff, diff_grid, axis=axis
                             )
 
-                    gradients.append((data_to_diff, var_string))
+                    gradients.append((data_to_diff, gradient_label))
 
         return gradients
 
-    @lru_cache(maxsize=10)
-    def gradients_to_include(self, include_terms: Tuple[str]):
-        """
-        Parse the include_terms list to extract the variables and orders to include in the library
-        """
-        gradients_to_include = {}
-        for term in include_terms:
-            # terms are in the form "u_{xyx}u_{xy}u" for example
-            # use regex to extract the variables and orders
-            matches = re.findall(r"([a-z])_{([a-z]+)}", term)
-            for var, ds in matches:
-                if var not in gradients_to_include:
-                    gradients_to_include[var] = []
-                gradients_to_include[var].append(ds)
-
-        return gradients_to_include
-
     def create_library(
         self,
-        input_data: np.ndarray = None,
+        *dependent_vars: np.ndarray,
         include_terms: List[str] = None,
+        term_regex: str = None,
     ) -> Tuple[np.ndarray, List[str]]:
         """
         Create a library of candidate functions for the PDE
         """
 
-        data = input_data
-
-        if data is None:
-            data = self.data
+        dep_var_shape = dependent_vars[0].shape
 
         elements = []
 
         if not include_terms or "1" in include_terms:
-            elements.append((np.ones(data.shape[:-1]), "1"))
+            elements.append((np.ones(dep_var_shape), "1"))
 
-        for i, var in enumerate(self.dep_vars):
-            if not include_terms or var in include_terms:
-                elements.append((data[..., len(self.ind_vars) + i], var))
+        for dep_var_label, dep_var in zip(self.dep_vars_labels, dependent_vars):
+            if not include_terms or dep_var_label in include_terms:
+                elements.append((dep_var, dep_var_label))
 
         gradients_to_calculate = None
         if include_terms:
             gradients_to_calculate = self.gradients_to_include(include_terms)
 
         elements += self.calculate_gradients(
-            data, gradients_to_calculate=gradients_to_calculate
+            dependent_vars=dependent_vars,
+            gradients_to_calculate=gradients_to_calculate,
         )
 
         lib = {}
 
-        if hasattr(self, "labels"):
-            for label in self.labels:
-                lib[label] = None
-
-        for pairs in itertools.product(elements, repeat=self.lib_size):
+        for pairs in itertools.product(elements, repeat=self.polynomial_degree):
             label = "".join(sorted([p[1] for p in pairs])).replace("1", "")
             if label == "":
                 label = "1"
-            if label in lib and lib[label] is not None:
+
+            # Skip if the label is already in the library (duplicates)
+            if label in lib:
                 continue
 
+            if term_regex and not re.match(term_regex, label):
+                continue
+
+            # terms not in include_terms are set to zero
             if include_terms and label not in include_terms:
-                lib[label] = np.zeros(data.shape[:-1])
+                lib[label] = np.zeros(dep_var_shape)
                 continue
 
-            term = [p[0] for p in pairs]
-            lib[label] = np.prod(term, axis=0)
+            lib[label] = np.prod([p[0] for p in pairs], axis=0)
 
-        if not hasattr(self, "labels"):
-            self.labels = sorted(lib.keys())
+        labels = sorted(lib.keys())
 
-        for label in self.labels:
-            if lib[label] is None:
-                lib[label] = np.zeros(data.shape[:-1])
-
-        return np.stack([lib[label] for label in self.labels]), self.labels
+        return np.stack([lib[label] for label in labels]), labels
 
     def solve_regression(
         self,
@@ -227,13 +225,15 @@ class PDEFind:
         n_terms = library.shape[0]
 
         print(f"Solving using {algorithm} regression")
-        print(f"Library size: {library.size}, Target size: {target.size}")
+        print(f"Library size: {library.shape}, Target size: {target.size}")
 
         if algorithm == "lasso":
             library = library.reshape((n_terms, -1)).T
             target = target.flatten()
 
-            reg = LassoCV(cv=5, max_iter=int(1e9), fit_intercept=False, alphas=alphas)
+            reg = LassoCV(
+                cv=5, max_iter=int(1e9), fit_intercept=False, alphas=[1e-6, 1e-5]
+            )
 
             reg.fit(library, target)
             self.coef = reg.coef_
@@ -252,8 +252,10 @@ class PDEFind:
         elif algorithm == "tlsq":
             target_flat = target.flatten()
 
+            library
+
             X = np.linalg.lstsq(
-                library.reshape((n_terms, -1)).T, target_flat, rcond=None
+                library.reshape((n_terms, -1)).T, target.flatten(), rcond=None
             )[0]
 
             progress = tqdm.tqdm(range(iterations), desc="TLSQ Iterations")
@@ -295,7 +297,7 @@ class PDEFind:
                 num_terms.append(sum(np.abs(X) > 0))
                 progress.set_postfix(
                     {
-                        "# of non-zero terms": num_terms[-1],
+                        "#nzz_terms": num_terms[-1],
                         "cutoff": cutoff,
                     }
                 )
@@ -314,51 +316,45 @@ class PDEFind:
 
         return self.coef, self.alpha
 
-    def save(self, filename: str):
+    @staticmethod
+    def subsample_data(
+        *arrays: np.ndarray, factors: List[int], random: bool = False
+    ) -> Tuple[np.ndarray]:
         """
-        Save the PDE and coefficients and terms to a file using pickle
+        Subsample the data by a factor of `factor` in each dimension
         """
 
-        with open(filename, "wb") as f:
-            pickle.dump(
-                {
-                    "coef": self.coef,
-                    "labels": self.labels,
-                    "ind_vars": self.ind_vars,
-                    "dep_vars": self.dep_vars,
-                },
-                f,
+        shape = arrays[0].shape
+
+        if len(shape) != len(factors):
+            raise ValueError(
+                "The number of dimensions of the data and the number of factors must be the same"
             )
 
-    def load(self, filename: str):
-        """
-        Load the PDE and coefficients and terms from a file using pickle
-        """
+        for dim, factor in enumerate(factors):
+            if factor != 1:
+                if random:
+                    number_of_ids = shape[dim] // factor
+                    idx = np.random.choice(
+                        np.arange(shape[dim]), number_of_ids, replace=False
+                    )
+                    arrays = [array.take(idx, axis=dim) for array in arrays]
+                else:
+                    arrays = [
+                        array[tuple([slice(None)] * dim + [slice(None, None, factor)])]
+                        for array in arrays
+                    ]
 
-        with open(filename, "rb") as f:
-            data = pickle.load(f)
+        return tuple(arrays)
 
-    def non_zero_terms(self, coef) -> Tuple[str]:
-        """
-        Return the non-zero terms in the PDE
-        """
-        return tuple([term for term, c in zip(self.labels, coef) if c != 0])
-
-    def latex_string(self, coefs: np.ndarray = None, var: str = None) -> str:
+    @staticmethod
+    def latex_string(coefs: np.ndarray, labels: List[str], var: str) -> str:
         """
         Return LaTeX string version of found PDE
         """
-        if not hasattr(self, "coef") and coefs is None:
-            raise ValueError("PDE coefficients not found")
-
-        if coefs is None:
-            coefs = self.coef
-
-        if var is None:
-            var = self.dep_vars[0]
 
         out_str = rf"\frac{{\partial {{{var}}}}}{{\partial {{t}}}}="
-        for term, c in zip(self.labels, coefs):
+        for term, c in zip(labels, coefs):
             if c == 0:
                 continue
 
@@ -373,21 +369,14 @@ class PDEFind:
 
         return out_str.strip()
 
-    def python_string(self, coefs: np.ndarray = None, var: str = None) -> str:
+    @staticmethod
+    def python_string(coefs: np.ndarray, labels: List[str], var: str) -> str:
         """
         Return Python string version of found PDE
         """
-        if not hasattr(self, "coef") and coefs is None:
-            raise ValueError("PDE coefficients not found")
-
-        if coefs is None:
-            coefs = self.coef
-
-        if var is None:
-            var = self.dep_vars[0]
 
         out_str = f"d{var}/dt = "
-        for term, c in zip(self.labels, coefs):
+        for term, c in zip(labels, coefs):
             if c == 0:
                 continue
 
@@ -408,3 +397,25 @@ class PDEFind:
             out_str += f"{c}*{term}"
 
         return out_str.strip().replace("{", "").replace("}", "")
+
+
+if __name__ == "__main__":
+    PDE_NUMBER = 1
+
+    raw_data = np.load("data/1.npz")
+
+    u = raw_data["u"]
+    x = raw_data["x"]
+    t = raw_data["t"]
+
+    pdefind = PDEFind(var_labels=(["x", "t"], ["u"]), polynomial_degree=2, order=2)
+
+    pdefind.add_grid(x, t)
+
+    library, labels = pdefind.create_library(u)
+
+    u_t = np.gradient(u, t[0], axis=1)
+
+    coef, alpha = pdefind.solve_regression(library, u_t, algorithm="tlsq")
+
+    print(pdefind.latex_string(coef, labels, "u"))
