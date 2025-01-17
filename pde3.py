@@ -1,7 +1,5 @@
 import numpy as np
 from lib.pde_find2 import PDEFind
-from lib.solve_pde import SolvePDE
-from lib.utils.plot_2D import plot
 
 raw_data = np.load("data/3.npz")
 
@@ -62,22 +60,5 @@ coef_v, alpha_v = pdefind.solve_regression(
 print(pdefind.latex_string(coef_v, labels, "v"))
 print(pdefind.python_string(coef_v, labels, "v"))
 
-# include_terms1 = pdefind.non_zero_terms(coef_u)
-# include_terms2 = pdefind.non_zero_terms(coef_v)
-
-# include_terms = tuple(set(include_terms1 + include_terms2))
-
-# u_0 = data[..., 3][:, :, 0]
-# v_0 = data[..., 4][:, :, 0]
-
-# solver = SolvePDE(data, 3, 2, pdefind)
-
-# t_grid = data[..., 2][0, 0]
-
-# sol, time_steps = solver.solve_pde(
-#     u_0, v_0, t_grid=t_grid, include_terms=include_terms, coefs=[coef_u, coef_v]
-# )
-
-# print(f"Time steps: {time_steps}")
-
-# plot(sol, data, "test_pde3.gif")
+# save the coefficients to a file
+np.savez("data/3_coefs.npz", u=coef_u, v=coef_v)

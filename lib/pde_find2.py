@@ -1,7 +1,8 @@
-from typing import Dict, Iterable, List, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 import numpy as np
 import itertools
 from sklearn.linear_model import LassoCV, RidgeCV
+from scipy.integrate import solve_ivp
 import re
 from functools import lru_cache
 import tqdm
@@ -47,6 +48,7 @@ class PDEFind:
 
     def add_grid(self, *independent_vars: np.ndarray):
         """ """
+        self.data_shape = independent_vars[0].shape
         self.ind_var_grids = []
         for i in range(len(independent_vars)):
             x = independent_vars[i][
@@ -67,7 +69,7 @@ class PDEFind:
         """
         gradients_to_include: Dict[str, List[str]] = {}
         for term in include_terms:
-            # terms are in the form "u_{xyx}u_{xy}u" for example
+            # terms are of the form "u_{xyx}u_{xy}u" for example
             # use regex to extract the variables and orders
             matches = re.findall(r"([a-z])_{([a-z]+)}", term)
             for var, ds in matches:
@@ -124,11 +126,15 @@ class PDEFind:
                         diff_grid = self.ind_var_grids[axis]
 
                         if self.periodic:
-                            padding = 3
-
                             # If the grid is periodic, pad the grid and data
-                            diff_grid = np.pad(diff_grid, padding, mode="wrap")
-                            data_to_diff = np.pad(data_to_diff, padding, mode="wrap")
+                            diff_grid = np.concatenate(
+                                [
+                                    [diff_grid[1] - diff_grid[0]],
+                                    diff_grid,
+                                    [diff_grid[-1] - diff_grid[-2]],
+                                ]
+                            )
+                            data_to_diff = np.pad(data_to_diff, 1, mode="wrap")
 
                             data_to_diff = np.gradient(
                                 data_to_diff, diff_grid, axis=axis
@@ -138,7 +144,7 @@ class PDEFind:
                             data_to_diff = data_to_diff[
                                 tuple(
                                     [
-                                        slice(padding, -padding)
+                                        slice(1, -1)
                                         for _ in range(len(data_to_diff.shape))
                                     ]
                                 )
@@ -156,7 +162,7 @@ class PDEFind:
     def create_library(
         self,
         *dependent_vars: np.ndarray,
-        include_terms: List[str] = None,
+        include_terms: Tuple[str] = None,
         term_regex: str = None,
     ) -> Tuple[np.ndarray, List[str]]:
         """
@@ -167,16 +173,14 @@ class PDEFind:
 
         elements = []
 
-        if not include_terms or "1" in include_terms:
-            elements.append((np.ones(dep_var_shape), "1"))
+        elements.append((np.ones(dep_var_shape), "1"))
 
         for dep_var_label, dep_var in zip(self.dep_vars_labels, dependent_vars):
-            if not include_terms or dep_var_label in include_terms:
-                elements.append((dep_var, dep_var_label))
+            elements.append((dep_var, dep_var_label))
 
         gradients_to_calculate = None
         if include_terms:
-            gradients_to_calculate = self.gradients_to_include(include_terms)
+            gradients_to_calculate = self.gradients_to_include(tuple(include_terms))
 
         elements += self.calculate_gradients(
             dependent_vars=dependent_vars,
@@ -199,7 +203,6 @@ class PDEFind:
 
             # terms not in include_terms are set to zero
             if include_terms and label not in include_terms:
-                lib[label] = np.zeros(dep_var_shape)
                 continue
 
             lib[label] = np.prod([p[0] for p in pairs], axis=0)
@@ -316,6 +319,54 @@ class PDEFind:
 
         return self.coef, self.alpha
 
+    def pde_rhs(
+        self,
+        t: Any,
+        u1D: np.ndarray,
+        terms_to_include: Tuple[str],
+        coeffs: np.ndarray,
+    ):
+        dep_vars = self.u1D_to_ND(u1D)
+
+        library, _ = self.create_library(*dep_vars, include_terms=terms_to_include)
+
+        out = []
+        for coef in coeffs:
+            out.append((library.T @ coef).T)
+
+        # Convert the 2D array back to 1D for the ODE solver
+        return self.uND_to_1D(*out)
+
+    def uND_to_1D(self, *data: np.ndarray):
+        return np.concatenate(data, axis=0).reshape(-1)
+
+    def u1D_to_ND(self, u1D: np.ndarray):
+        return u1D.reshape((self.num_dep_vars,) + self.data_shape[:-1])
+
+    def solve(
+        self,
+        initial_condition: Iterable[np.ndarray],
+        coeffs: Iterable[np.ndarray],
+        labels: List[str],
+    ):
+        nnz_terms = self.non_zero_terms(coeffs, labels)
+        nnz_coeffs = self.condense_coeffs(coeffs, labels)
+        initial_1D = self.uND_to_1D(*initial_condition)
+
+        sol = solve_ivp(
+            self.pde_rhs,
+            (self.time_grid.min(), self.time_grid.max()),
+            initial_1D,
+            t_eval=self.time_grid,
+            method="RK45",
+            args=(nnz_terms, nnz_coeffs),
+        )
+
+        print(sol.status)
+        print(sol.message)
+
+        return sol.y.reshape((self.num_dep_vars,) + self.data_shape[:-1] + (-1,))
+
     @staticmethod
     def subsample_data(
         *arrays: np.ndarray, factors: List[int], random: bool = False
@@ -397,6 +448,40 @@ class PDEFind:
             out_str += f"{c}*{term}"
 
         return out_str.strip().replace("{", "").replace("}", "")
+
+    @staticmethod
+    def non_zero_terms(coefs: Iterable[np.ndarray], labels: List[str]) -> List[str]:
+        """
+        Return the non-zero terms of the PDE for each set of coefficients
+        """
+        terms = set()
+        for c in coefs:
+            t = [labels[i] for i in np.where(c != 0)[0]]
+            terms.update(t)
+
+        return sorted(list(terms))
+
+    @staticmethod
+    def condense_coeffs(
+        coefs: Iterable[np.ndarray], labels: List[str]
+    ) -> tuple[np.ndarray]:
+        """
+        Return the non-zero coefficients of the PDE
+        """
+
+        non_zero_terms = PDEFind.non_zero_terms(coefs, labels)
+
+        new_coefs = []
+
+        for c in coefs:
+            condensed = []
+            for c, term in zip(c, labels):
+                if term in non_zero_terms:
+                    condensed.append(c)
+
+            new_coefs.append(np.array(condensed))
+
+        return tuple(new_coefs)
 
 
 if __name__ == "__main__":

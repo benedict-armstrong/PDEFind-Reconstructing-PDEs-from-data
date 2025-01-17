@@ -41,6 +41,8 @@ x, y, t = pdefind.add_grid(x_o, y_o, t_o)
 dx = x[1] - x[0]
 dy = y[1] - y[0]
 
+print(f"dx = {dx}, dy = {dy}")
+
 # %%
 x.shape, y.shape, t.shape
 
@@ -48,9 +50,11 @@ x.shape, y.shape, t.shape
 Nx = x.shape[0]
 Ny = y.shape[0]
 
+print(f"Nx = {Nx}, Ny = {Ny}")
+
 # %%
-u = u_o[::4, ::4, ::1]
-v = v_o[::4, ::4, ::1]
+u = u_o  # [::4, ::4, ::1]
+v = v_o  # [::4, ::4, ::1]
 
 
 # %%
@@ -71,22 +75,13 @@ def u2D_to_1D(*data):
 
 
 def u1D_to_2D(u1D: np.ndarray):
-    u = u1D[: Nx * Ny].reshape((Nx, Ny))
-    v = u1D[Nx * Ny :].reshape((Nx, Ny))
-
-    reshaped_data = u1D.reshape((2, Nx, Ny))
-    y = np.moveaxis(reshaped_data, 0, -1)
-    u_1 = y[..., 0]
-    v_1 = y[..., 1]
-    return y
+    return u1D.reshape((2, Nx, Ny))
 
 
 # %%
 # Define the PDE as a system of ODEs
 def pde_system(t, u1D):
-    dataND = u1D_to_2D(u1D)
-
-    u, v = dataND[..., 0], dataND[..., 1]
+    u, v = u1D_to_2D(u1D)
 
     padding = 1
 
