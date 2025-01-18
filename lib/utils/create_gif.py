@@ -1,6 +1,10 @@
 from matplotlib.animation import FuncAnimation
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
+
+sns.set_theme("paper", "whitegrid")
+sns.despine()
 
 
 def create_gif(
@@ -15,7 +19,7 @@ def create_gif(
     cmap="viridis",
 ):
     # Create a figure with two 3D axis
-    fig, axs = plt.subplots(2, 3, figsize=(12, 6))
+    fig, axs = plt.subplots(2, 3, figsize=(24, 8))
 
     # Function to update the plot
     def update(i: int):
