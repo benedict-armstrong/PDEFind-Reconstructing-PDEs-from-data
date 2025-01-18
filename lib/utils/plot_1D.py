@@ -13,7 +13,7 @@ def plot_3d(
     """
     Plot the solution in 3D
     """
-    fig, axs = plt.subplots(1, 3, figsize=(20, 5), subplot_kw={"projection": "3d"})
+    fig, axs = plt.subplots(1, 3, figsize=(20, 7), subplot_kw={"projection": "3d"})
 
     x = ref_sol[..., 0]
     y = ref_sol[..., 1]
@@ -28,13 +28,15 @@ def plot_3d(
     axs[1].set_title("$u^{Identified System}$")
 
     axs[2].plot_surface(x, y, np.abs(u_ref - u_sol), cmap=C_MAP)
-    axs[2].set_title("$u^{Reference} - u^{Identified System}$")
+    axs[2].set_title("$|u^{Reference} - u^{Identified System}|$")
 
     for ax in axs:
         ax.set_zlim(u_sol.min() - 0.1, u_sol.max() + 0.1)
         ax.set_xlabel("$x$")
         ax.set_ylabel("$t$")
         ax.set_zlabel("$u$")
+
+    plt.tight_layout()
 
     if path:
         plt.savefig(path)
@@ -55,7 +57,7 @@ def plot_2d(
     u_sol = sol[..., 0]
     u_ref = ref_sol[..., 2]
 
-    fig, axs = plt.subplots(1, 3, figsize=(20, 5), sharey=True)
+    fig, axs = plt.subplots(1, 3, figsize=(20, 7), sharey=True)
     fig.tight_layout(pad=2.0)
     fig.subplots_adjust(left=0.1)
 

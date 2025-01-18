@@ -348,7 +348,8 @@ class PDEFind:
         initial_condition: Iterable[np.ndarray],
         coeffs: Iterable[np.ndarray],
         labels: List[str],
-    ):
+    ) -> np.ndarray:
+        """ """
         nnz_terms = self.non_zero_terms(coeffs, labels)
         nnz_coeffs = self.condense_coeffs(coeffs, labels)
         initial_1D = self.uND_to_1D(*initial_condition)
@@ -365,7 +366,10 @@ class PDEFind:
         print(sol.status)
         print(sol.message)
 
-        return sol.y.reshape((self.num_dep_vars,) + self.data_shape[:-1] + (-1,))
+        if self.num_dep_vars > 1:
+            return sol.y.reshape((self.num_dep_vars,) + self.data_shape[:-1] + (-1,))
+        else:
+            return sol.y.reshape(self.data_shape[:-1] + (-1,))
 
     @staticmethod
     def subsample_data(
