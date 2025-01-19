@@ -19,7 +19,7 @@ def create_gif(
     cmap="viridis",
 ):
     # Create a figure with two 3D axis
-    fig, axs = plt.subplots(2, 3, figsize=(24, 8))
+    fig, axs = plt.subplots(2, 3, figsize=(20, 8))
 
     # Function to update the plot
     def update(i: int):

@@ -7,6 +7,8 @@ import re
 from functools import lru_cache
 import tqdm
 
+from lib.tlsq import truncated_least_squares
+
 
 class PDEFind:
     """
@@ -218,8 +220,9 @@ class PDEFind:
         cutoff: float = 1e-2,
         iterations: int = 50,
         algorithm: str = "lasso",
-        num_term_limit=10,
+        num_term_limit: int | Iterable[int] = 1,
         alphas=[1e-6, 1e-5, 1e-4, 1e-3],
+        verbose: bool = False,
     ):
         """
         Solve regression problem to find the coefficients of the PDE
@@ -255,57 +258,37 @@ class PDEFind:
         elif algorithm == "tlsq":
             target_flat = target.flatten()
 
-            library
+            errors = []
+            best_coef = None
+            best_error = np.inf
 
-            X = np.linalg.lstsq(
-                library.reshape((n_terms, -1)).T, target.flatten(), rcond=None
-            )[0]
-
-            progress = tqdm.tqdm(range(iterations), desc="TLSQ Iterations")
-
-            num_terms = []
-            original_cutoff = cutoff
-
-            for _ in progress:
-                # if the number of terms is the same for 2 iterations and less than the limit, break
-                if (
-                    len(num_terms) > 1
-                    and num_terms[-1] == num_terms[-2]
-                    and num_terms[-1] < num_term_limit
-                ):
-                    break
-
-                # if the number of terms is the same for 2 iterations and more than the limit, raise cutoff
-                if (
-                    len(num_terms) > 1
-                    and num_terms[-1] == num_terms[-2]
-                    and num_terms[-1] >= num_term_limit
-                ):
-                    cutoff *= 2
-
-                # if the two consecutive iterations have different number of terms, reset the limit
-                if len(num_terms) > 1 and num_terms[-1] != num_terms[-2]:
-                    cutoff = original_cutoff
-
-                X[np.abs(X) < cutoff] = 0
-                biginds = np.abs(X) > 0
-                new_lib = library[biginds].reshape((sum(biginds), -1), copy=True).T
-
-                X[biginds] = np.linalg.lstsq(
-                    new_lib,
+            if isinstance(num_term_limit, int):
+                num_term_limit = [num_term_limit]
+            for max_terms in num_term_limit:
+                if verbose:
+                    print(f"Trying {max_terms=}")
+                self.coef = truncated_least_squares(
+                    library.reshape((n_terms, -1)).T,
                     target_flat,
-                    rcond=None,
-                )[0]
-
-                num_terms.append(sum(np.abs(X) > 0))
-                progress.set_postfix(
-                    {
-                        "#nzz_terms": num_terms[-1],
-                        "cutoff": cutoff,
-                    }
+                    cutoff=cutoff,
+                    max_iterations=iterations,
+                    num_term_limit=max_terms,
+                    verbose=verbose,
                 )
 
-            self.coef = X
+                error = np.mean(((library.T @ self.coef).T - target) ** 2)
+
+                if error < best_error:
+                    best_error = error
+                    best_coef = self.coef
+
+                if verbose:
+                    print(f"Error: {error}")
+                errors.append(error)
+
+            print(f"Minimum error at {np.sum(best_coef != 0)} terms")
+
+            self.coef = best_coef
             self.alpha = None
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
