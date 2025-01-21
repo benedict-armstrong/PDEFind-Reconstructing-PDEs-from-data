@@ -86,7 +86,7 @@ def plot_2d(
     )
     axs[2].set_title("$|u^{Reference} - u^{Identified System}|$")
 
-    plt.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
+    plt.subplots_adjust(left=0.05, right=1.1, top=0.9, bottom=0.1)
     fig.colorbar(cm3, ax=axs)
 
     for ax in axs:
