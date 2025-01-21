@@ -40,14 +40,17 @@ def plot_3d(
 
     plt.tight_layout()
 
+    plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+
     if path:
-        plt.savefig(path)
+        plt.savefig(path, dpi=300)
 
 
 def plot_2d(
     sol: np.ndarray,
     ref_sol: np.ndarray,
     path: str = None,
+    ratio: float = 1.0,
 ):
     """
     Plot the solution in 2D
@@ -83,12 +86,14 @@ def plot_2d(
     )
     axs[2].set_title("$|u^{Reference} - u^{Identified System}|$")
 
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
     fig.colorbar(cm3, ax=axs)
 
     for ax in axs:
         ax.set_xlabel("$x$")
+        ax.set_aspect(ratio)
 
     axs[0].set_ylabel("$t$")
 
     if path:
-        plt.savefig(path)
+        plt.savefig(path, dpi=300)
