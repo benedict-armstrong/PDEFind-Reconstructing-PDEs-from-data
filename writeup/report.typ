@@ -46,7 +46,7 @@
 
 = Introduction
 
-As part of this year's AI in the Sciences and Engineering course, I replicated and extended PDE-Find, as described in the paper by Rudy et al. @rudy2017data. The implementation is structured as a library, capable not only of identifying partial differential equations but also of solving them using SciPy's `solve_ivp` to verify the discovered solutions. The notebooks, library code, and scripts for generating all plots and figures are available in #link("https://github.com/benedict-armstrong/PDEFind-Reconstructing-PDEs-from-data","this repository").
+As part of this year's AI in the Sciences and Engineering course, I replicated and extended PDE-Find, as described in the paper by Rudy et al. @rudy2017data. The implementation is structured as a library, capable not only of identifying partial differential equations but also of solving them using SciPy's `solve_ivp` to verify the discovered equations. The notebooks, library code, and scripts for generating all plots and figures are available in #link("https://github.com/benedict-armstrong/PDEFind-Reconstructing-PDEs-from-data","this repository").
 
 = PDE-Find: Reconstructing PDEs from data
 
