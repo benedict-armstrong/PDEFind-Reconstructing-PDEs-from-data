@@ -48,12 +48,8 @@
 
 As part of this year's AI in the Sciences and Engineering course, I replicated and extended PDE-Find, as described in the paper by Rudy et al. @rudy2017data. The implementation is structured as a library, capable not only of identifying partial differential equations but also of solving them using SciPy's `solve_ivp` to verify the discovered equations. The notebooks, library code, and scripts for generating all plots and figures are available in #link("https://github.com/benedict-armstrong/PDEFind-Reconstructing-PDEs-from-data","this repository").
 
-= PDE-Find: Reconstructing PDEs from data
-
 #let body = [
-  This task involves replicating PDE-FIND from the work by Rudy et al. @rudy2017data to identify governing partial differential equations (PDEs) from observational data. We were provided with three datasets, each representing a different PDE, and tasked with reconstructing these PDEs using PDE-FIND or a similar algorithm.
-
-  == Implementation
+  = Implementation
 
   The first step involved constructing a library of potential PDE terms. The main challenge was accurately estimating derivatives of the solution. Initially, I implemented a finite difference method but later transitioned to using `numpy`'s `np.gradient` for more efficient and reliable derivative estimation.
 
@@ -61,15 +57,15 @@ As part of this year's AI in the Sciences and Engineering course, I replicated a
 
   The implementation, structured across three Jupyter notebooks (`pde1.ipynb`, `pde2.ipynb`, and `pde3.ipynb`), handles each dataset individually. Each file also contains a more detailed analysis for each problem. The core components for the Library, including code for generating the library of terms and the TLS-DT algorithm, are encapsulated in `lib/pde_find.py` and `lib/tlsq.py`.
 
-  === Truncated Least Squares with dynamic thresholding (TLS-DT) <tls_dt_algorithm_section>
+  == Truncated Least Squares with dynamic thresholding (TLS-DT) <tls_dt_algorithm_section>
 
   The TLS-DT algorithm extends STRidge @rudy2017data by dynamically adjusting the threshold for coefficient selection. The threshold is raised if the number of non-zero coefficients stays the same for a number of iterations and the coefficient contains more non-zero terms than allowed. This prevents the algorithm from becoming trapped in local minima, ensuring a more robust selection of sparse terms in the PDE. The full algorithm is outlined @tls_dt_algorithm.
 
-  == Results
+  = Results
 
   The accuracy of the reconstructed PDEs was validated by comparing solutions generated using `scipy.solve_ivp` with the original data. The results for each PDE are summarized below.
 
-  === PDE 1
+  == PDE 1
 
   Initial inspection suggested a form resembling Burgers' equation. The term library included all second-order polynomial combinations of $u$ and it's 1st, 2nd and 3rd order derivatives (see @pde1_terms). The algorithm converged rapidly to @pde1_eq.
 
@@ -93,7 +89,7 @@ As part of this year's AI in the Sciences and Engineering course, I replicated a
     placement: bottom,
   ) <pde1_fig>
 
-  === PDE 2
+  == PDE 2
 
   For dataset 2 the PDE was not immediately obvious (at least to the untrained eye). Using a similar term library (see @pde2_terms),the algorithm initially identified a four-term solution resembling the _Korteweg-de Vries_ equation. Refinement with adjusted `max_terms` value yields @pde2_eq, a two term solution with only a slight increase in the relative $L_2$ error and more desired sparsity.
 
@@ -117,7 +113,7 @@ As part of this year's AI in the Sciences and Engineering course, I replicated a
     placement: bottom,
   ) <pde2_fig>
 
-  === PDE 3
+  == PDE 3
 
   Dataset 3 presented a convection-diffusion equation in two dimensions. Due to dataset size, spatial and temporal dimensions were scaled by a factor of 0.5. The term library was restricted to third-order polynomial terms of $u$ and $v$ with a maximum of one derivative of any order (see @pde3_terms). The algorithm converged to @pde3_eq with a relative $L_2$ error of $4.173e^(-1)$ for both $u$ and $v$. This error is significantly higher than for the previous two PDEs, but might be due to the larger domain and higher order terms. The hyperparameter used were: `max_terms`=10 and `cutoff`=$1e^(-4)$.
 
@@ -149,7 +145,7 @@ As part of this year's AI in the Sciences and Engineering course, I replicated a
     caption: [Relative $L_2$ error for each PDE],
   ) <pde_errors>
 
-  == Conclusion & Improvements
+  = Conclusion & Improvements
   The PDE-FIND implementation successfully identified plausible PDEs for all datasets. Future improvements include:
 
   - Extending the library to support other differentiation methods such as polynomial interpolation.
